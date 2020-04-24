@@ -27,7 +27,8 @@ fn main() {
 
     for line in io::stdin().lock().lines() {
         for letter in line.unwrap().chars() {
-            tx.send(letter);
+            tx.send(letter)
+                .expect("Failed to send letter");
         }
     }
 }
