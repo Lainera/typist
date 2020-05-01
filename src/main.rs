@@ -1,66 +1,89 @@
-use std::io;
-use std::io::prelude::*;
-use std::sync::mpsc;
-use std::thread;
-use termion::event::Key;
+use std::{
+    io::{
+        self,
+        prelude::*,
+    },
+    thread
+};
+use std::sync::mpsc::{
+    Sender,
+    Receiver,
+    channel,
+};
+
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+// local
+mod control;
+mod parser;
+mod renderer;
 
-fn main() -> Result<(), io::Error> {
+use renderer::Renderer;
+use control::Control;
+use parser::{
+    Parser,
+    Parsed
+};
 
-    let stdin = io::stdin();
-    let mut stdout = io::stdout().into_raw_mode().expect("failed to convert to raw mode");
-    let word = std::fs::read_to_string("./some-text.txt")?;
-    write!(stdout, 
-            "{}{}{}",
-            termion::clear::All,
-            termion::cursor::Goto(1, 1),
-            termion::cursor::BlinkingUnderline
-        ).unwrap();
-    for (ix, line) in word.lines().enumerate() {
-        write!(stdout, "{}{}", line, termion::cursor::Goto(1, (ix + 2) as u16)).unwrap();
-    }
-    stdout.flush().unwrap();
-    for c in stdin.keys() {
-        match c.unwrap() {
-            Key::Char('q') => break,
-            Key::Ctrl(c) if c == 'c' => break,
-            Key::Char('\n') => {
-                write!(stdout, "\n{}", termion::cursor::Left(std::u16::MAX)).unwrap()
-            },
-            Key::Char(c) => {
-                write!(stdout, "{}", c).unwrap()
-            },
-            _ => {},
+//moves around string,
+//new (&str)? yes, I think makes sense to pass pointer to string and have internal cursor
+//listens to input from parser, parser sends parsed, checker receives parsed, checks and forwards
+//Checked to renderer, which in return draws on the terminal.
+//Checker also tells parser to stop listening when done.
+
+pub (crate) struct Checker<'a>
+{
+    contents: &'a str, 
+    input: Receiver<Parsed>,
+    output: Sender<Control>,
+    done: Sender<()>,
+}
+
+impl <'a>Checker<'a> {
+    pub(crate) fn new(input: Receiver<Parsed>, output: Sender<Control>, done: Sender<()>) -> Self {
+        let contents = "hue hue";
+        Checker{
+            input,
+            output,
+            contents,
+            done,
         }
-        stdout.flush().unwrap();
     }
-    write!(stdout, "{}", termion::cursor::Show).unwrap();
-//    let (tx, rx) = mpsc::channel();
-//    thread::spawn(move || {
-//        let word = String::from("Hello");
-//        let size = word.len();
-//        let letters = word.chars();
-//        let duplex = rx.into_iter().zip(letters);
-//        let mut errors = 0;
-//        let mut counter = 0;
-//        for (a, b) in duplex.peekable() {
-//            println!("Received:{}, Actual:{}", a, b);
-//            if a != b { errors += 1}
-//            counter += 1;
-//            if counter == size {
-//                break;
-//            }
-//        }
-//        println!("Error count: {}", errors);
-//        std::process::exit(0)
-//    });
 
-//    for line in io::stdin().lock().lines() {
-//        for letter in line.unwrap().chars() {
-//            tx.send(letter)
-//                .expect("Failed to send letter");
-//        }
-//    }
+    pub(crate) fn run(mut self) -> Result<(), std::sync::mpsc::SendError<Control>> {
+        println!("Keque");
+        Ok(())
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // or print word before converting terminal into raw mode?
+    let word = std::fs::read_to_string("./some-text.txt")?;
+
+    let mut stdout = io::stdout().into_raw_mode().expect("failed to convert to raw mode");
+    write!(
+        stdout, 
+        "{}{}{}",
+        termion::clear::All,
+        termion::cursor::Goto(1, 1),
+        termion::cursor::BlinkingUnderline
+    ).expect("Failed to set up terminal");
+    // init communication channels
+    let (tx_done, rx_done): (Sender<()>, Receiver<()>) = channel();
+    let (tx_parsed, rx_parsed): (Sender<Parsed>, Receiver<Parsed>) = channel();
+    let (tx_checked, rx_checked): (Sender<Control>, Receiver<Control>) = channel();
+    // init subprocesses
+    let parser = Parser::new(io::stdin().keys(), rx_done, tx_parsed);    
+    let checker = Checker::new(rx_parsed, tx_checked, tx_done); 
+    let renderer = Renderer::new(io::stdout(), rx_checked)?;
+
+    // probably somewhere here need to print initial string with renderer.
+    thread::spawn(move || checker.run());
+    let renderer_handle = thread::spawn(move || renderer.run());
+    parser.run()?;
+    renderer_handle.join()
+        .expect("Renderer thread panicked")
+        .expect("Renderer failed to flush");
+
     Ok(())
 }
