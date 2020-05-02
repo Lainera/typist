@@ -1,42 +1,72 @@
 use std::{
-    io::{self, Stdout, prelude::*},
+    io::{self, prelude::*, Stdout},
     sync::mpsc::Receiver,
 };
-use termion::raw::{
-    RawTerminal,
-    IntoRawMode,
-};
+use termion::raw::{IntoRawMode, RawTerminal};
 
 use crate::Control;
 
-pub(crate) struct Renderer {
-    stdout: RawTerminal<Stdout>,
-    input: Receiver<Control>
+pub(crate) fn draw_initial(mut stdout: RawTerminal<Stdout>, word: &str) -> Result<(), io::Error> {
+   write!(
+       stdout, 
+       "{}{}{}", 
+       termion::clear::All, 
+       termion::cursor::Goto(1, 1), 
+       termion::cursor::Hide
+   )?;
+   
+   for line in word.lines() {
+        write!(
+            stdout, 
+            "{}\n{}", 
+            line, 
+            termion::cursor::Left(std::u16::MAX)
+        )?
+   }
+
+   write!(
+       stdout, 
+       "{}{}{}", 
+       termion::cursor::Goto(1, 1), 
+       termion::cursor::Show,
+       termion::cursor::BlinkingUnderline
+    )?;
+   stdout.flush()
 }
 
+pub(crate) struct Renderer {
+    stdout: RawTerminal<Stdout>,
+    input: Receiver<Control>,
+}
+
+
 impl Renderer {
-   pub(crate) fn new(stdout: Stdout, input: Receiver<Control>) -> Result<Self, io::Error> {
+    pub(crate) fn new(stdout: Stdout, input: Receiver<Control>) -> Result<Self, io::Error> {
         let stdout = stdout.into_raw_mode()?;
-        Ok(Renderer {
-            stdout,
-            input,
-        })
+        Ok(Self { stdout, input })
     }
 
-   pub(crate) fn run(mut self) -> Result<(), io::Error> {
+    pub(crate) fn run(mut self) -> Result<(), io::Error> {
         for c in self.input {
             match c {
                 Control::Stop => {
                     // Restore everything back to normal on Stop command;
                     write!(self.stdout, "{}", termion::cursor::Restore)?;
                     self.stdout.flush()?;
-                    break
-                },
-                Control::Backspace => write!(
-                    self.stdout, 
-                    "{} {}", 
-                    termion::cursor::Left(1), 
+                    break;
+                }
+                Control::Backspace(symbol) => write!(
+                    self.stdout,
+                    "{}{}{}",
+                    termion::cursor::Left(1),
+                    symbol,
                     termion::cursor::Left(1)
+                )?,
+                Control::PreviousLine => write!(
+                    self.stdout, 
+                    "{}{}", 
+                    termion::cursor::Up(1), 
+                    termion::cursor::Right(std::u16::MAX)
                 )?,
                 Control::Enter => write!(
                     self.stdout, 
@@ -45,16 +75,16 @@ impl Renderer {
                 )?,
                 Control::Symbol(result) => match result {
                     Ok(s) => write!(
-                        self.stdout, 
-                        "{}{}{}", 
-                        termion::color::Fg(termion::color::Green), 
-                        s, 
+                        self.stdout,
+                        "{}{}{}",
+                        termion::color::Fg(termion::color::Green),
+                        s,
                         termion::color::Fg(termion::color::Reset)
                     )?,
                     Err(s) => write!(
-                        self.stdout, 
-                        "{}{}{}", 
-                        termion::color::Fg(termion::color::Red), 
+                        self.stdout,
+                        "{}{}{}",
+                        termion::color::Fg(termion::color::Red),
                         s,
                         termion::color::Fg(termion::color::Reset),
                     )?,
@@ -65,4 +95,3 @@ impl Renderer {
         Ok(())
     }
 }
-

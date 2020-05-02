@@ -1,5 +1,6 @@
 pub(crate) enum Control {
-    Backspace,
+    Backspace(char),
+    PreviousLine,
     Enter,
     Stop,
     Symbol(Result<char, char>),
