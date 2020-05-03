@@ -6,29 +6,6 @@ use termion::raw::{IntoRawMode, RawTerminal};
 
 use crate::Control;
 
-pub(crate) fn draw_initial(mut stdout: RawTerminal<Stdout>, word: &str) -> Result<(), io::Error> {
-    write!(
-        stdout,
-        "{}{}{}",
-        termion::clear::All,
-        termion::cursor::Goto(1, 1),
-        termion::cursor::Hide
-    )?;
-
-    for line in word.lines() {
-        write!(stdout, "{}\n{}", line, termion::cursor::Left(std::u16::MAX))?
-    }
-
-    write!(
-        stdout,
-        "{}{}{}",
-        termion::cursor::Goto(1, 1),
-        termion::cursor::Show,
-        termion::cursor::BlinkingUnderline
-    )?;
-    stdout.flush()
-}
-
 pub(crate) struct Renderer {
     stdout: RawTerminal<Stdout>,
     input: Receiver<Control>,
@@ -85,5 +62,29 @@ impl Renderer {
             self.stdout.flush()?
         }
         Ok(())
+    }
+
+    pub(crate) fn draw_initial(&mut self, word: &str) -> Result<(), io::Error> {
+        write!(
+            self.stdout,
+            "{}{}{}",
+            termion::clear::All,
+            termion::cursor::Goto(1, 1),
+            termion::cursor::Hide
+        )?;
+
+        for line in word.lines() {
+            write!(self.stdout, "{}\n\r", line)?
+        }
+
+        write!(
+            self.stdout,
+            "{}{}{}",
+            termion::cursor::Goto(1, 1),
+            termion::cursor::Show,
+            termion::cursor::BlinkingUnderline
+        )?;
+
+        self.stdout.flush()
     }
 }
