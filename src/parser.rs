@@ -1,9 +1,9 @@
+use crate::Control;
 use std::{
     io,
     sync::mpsc::{Receiver, Sender},
 };
 use termion::event::Key;
-use crate::Control;
 
 pub(crate) enum Parsed {
     Stop,
@@ -36,7 +36,7 @@ where
         for symbol in self.source {
             match self.done.try_recv() {
                 Ok(Control::Stop) => break,
-                _ => ()
+                _ => (),
             }
 
             match symbol.expect("Failed to parse symbol") {
@@ -45,7 +45,7 @@ where
                     break;
                 }
                 Key::Backspace => self.output.send(Parsed::Backspace)?,
-    //            Key::Char('\n') => self.output.send(Parsed::Enter)?,
+                //            Key::Char('\n') => self.output.send(Parsed::Enter)?,
                 Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
                 _ => {}
             }

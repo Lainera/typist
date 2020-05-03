@@ -1,49 +1,73 @@
 use crate::Parsed;
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{Receiver, Sender};
 
 pub(crate) enum Control {
     Backspace(char),
-    PreviousLine,
+    GoTo((usize, usize)),
+    Symbol(Result<char, char>),
     Enter,
     Stop,
-    Symbol(Result<char, char>),
 }
 
 struct StringCursor {
-    source: Vec<char>,
-    cursor: usize,
+    source: Vec<Vec<char>>,
+    cursor: (usize, usize),
 }
 
 impl StringCursor {
     fn new<S: Into<String>>(source: S) -> Self {
-        let source = source
+        let source: Vec<Vec<char>> = source
             .into()
-            .chars()
-            .collect::<Vec<char>>();
-
+            .lines()
+            .map(|line| line.chars().collect::<Vec<char>>())
+            .collect();
         Self {
             source,
-            cursor: 0
+            cursor: (0, 0),
         }
     }
-    // Need to include some more info here. Potentially line number and length. 
-    fn next(&mut self) -> Option<&char> {
-        let symbol = self.source.get(self.cursor);
+
+    fn next(&mut self) -> (Option<&char>, Option<(usize, usize)>) {
+        let (row, column) = self.cursor;
+        let line = self.source.get(row).expect("Overflow on the lines next");
+        let symbol = line.get(column);
         if symbol.is_some() {
-            self.cursor += 1;
+            self.cursor = (row, column + 1);
+            return (symbol, Some(self.cursor));
         }
-        symbol
+        // No characters left in current line
+        if self.source.get(row + 1).is_some() {
+            self.cursor = (row + 1, 0);
+            return (None, Some(self.cursor));
+        }
+        // End of the input
+        return (None, None);
     }
-    
-    fn prev(&mut self) -> Option<&char> {
-        // Beginning of source? -> Nowhere to run
-        if self.cursor.checked_sub(1).is_none() {
-            None
-        } else {
-        // Otherwise rewind cursor one position and spit out contents. 
-            self.cursor -= 1;
-            self.source.get(self.cursor)
+
+    fn prev(&mut self) -> (Option<&char>, Option<(usize, usize)>) {
+        let (row, column) = self.cursor;
+        // There are still preceding characters
+        if column > 0 {
+            let line = self
+                .source
+                .get(row)
+                .expect("Overflow on the lines previous");
+            self.cursor = (row, column - 1);
+            return (line.get(column - 1), Some(self.cursor));
         }
+        // There are still preceding lines
+        if row > 0 {
+            let line = self
+                .source
+                .get(row - 1)
+                .expect("Overflow on the lines previous");
+            self.cursor = (row - 1, line.len());
+            // Moving back one line leaves us on the spot that was occupied by `\n` or `\r\n`
+            // Thus we return None
+            return (None, Some(self.cursor));
+        }
+        // We are in the beginning of source
+        (None, None)
     }
 }
 
@@ -56,12 +80,12 @@ pub(crate) struct Checker {
 
 impl Checker {
     pub(crate) fn new(
-        input: Receiver<Parsed>, 
-        output: Sender<Control>, 
-        done: Sender<Control>, 
-        source_string: String
+        input: Receiver<Parsed>,
+        output: Sender<Control>,
+        done: Sender<Control>,
+        source_string: String,
     ) -> Self {
-        let source = StringCursor::new(source_string); 
+        let source = StringCursor::new(source_string);
         Self {
             done,
             input,
@@ -77,47 +101,42 @@ impl Checker {
                 Parsed::Stop => {
                     self.output.send(Control::Stop)?;
                     break;
-                },
+                }
                 Parsed::Backspace => {
                     match source.prev() {
-                        Some(&source_symbol) => {
-                            // Maybe need to handle variety of other newline chars?
-                            if source_symbol == '\n' {
-                                self.output.send(Control::PreviousLine)?
-                            } else {
-                                self.output.send(Control::Backspace(source_symbol))?
-                            }
-                        },
-                        // We are at first symbol in source string
-                        None => (),
+                        (Some(&source_symbol), Some(_)) => {
+                            self.output.send(Control::Backspace(source_symbol))?
+                        }
+                        (None, Some(cursor)) => self.output.send(Control::GoTo(cursor))?,
+                        // Beginning of the string, backspacing does nothing
+                        _ => {}
                     }
-                },
-                Parsed::Symbol(symbol) => {
-                   match source.next() {
-                       Some(&source_symbol) if source_symbol == '\n' => {
-                           if source_symbol == symbol {
-                               self.output.send(Control::Enter)?
-                           } else {
-                               source.prev();
-                           }
-                       },
-                       Some(&source_symbol) => {
-                           if source_symbol == symbol {
-                               self.output.send(Control::Symbol(Ok(symbol)))?
-                           } else {
-                               self.output.send(Control::Symbol(Err(symbol)))?
-                           }
-                       },
-                       None => {
-                           self.done.send(Control::Stop)?;
-                           self.output.send(Control::Stop)?;
-                           break;
-                       }
-                   }
+                }
+                Parsed::Symbol(symbol) => match source.next() {
+                    (Some(&source_symbol), Some(_)) => {
+                        if source_symbol == symbol {
+                            self.output.send(Control::Symbol(Ok(source_symbol)))?
+                        } else {
+                            self.output.send(Control::Symbol(Err(source_symbol)))?
+                        }
+                    }
+                    (None, Some(_)) => {
+                        if symbol == '\n' {
+                            self.output.send(Control::Enter)?
+                        } else {
+                            source.prev();
+                        }
+                    }
+                    (None, None) => {
+                        self.done.send(Control::Stop)?;
+                        self.output.send(Control::Stop)?;
+                        break;
+                    }
+                    // End of the line, but symbol is not newline -> do nothing.
+                    _ => {}
                 },
             }
         }
         Ok(())
     }
 }
-
