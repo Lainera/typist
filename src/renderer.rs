@@ -39,9 +39,6 @@ impl Renderer {
                     // Termion is one-based, not zero based
                     termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
                 )?,
-                Control::Enter => {
-                    write!(self.stdout, "\n{}", termion::cursor::Left(std::u16::MAX))?
-                }
                 Control::Symbol(result) => match result {
                     Ok(s) => write!(
                         self.stdout,

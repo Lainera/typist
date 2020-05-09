@@ -1,11 +1,10 @@
 use crate::Parsed;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 pub(crate) enum Control {
     Backspace(char),
     GoTo((usize, usize)),
     Symbol(Result<char, char>),
-    Enter,
     Stop,
 }
 
@@ -75,14 +74,14 @@ pub(crate) struct Checker {
     source: StringCursor,
     input: Receiver<Parsed>,
     output: Sender<Control>,
-    done: Sender<Control>,
+    done: SyncSender<Control>,
 }
 
 impl Checker {
     pub(crate) fn new(
         input: Receiver<Parsed>,
         output: Sender<Control>,
-        done: Sender<Control>,
+        done: SyncSender<Control>,
         source_string: String,
     ) -> Self {
         let source = StringCursor::new(source_string);
@@ -120,9 +119,9 @@ impl Checker {
                             self.output.send(Control::Symbol(Err(source_symbol)))?
                         }
                     }
-                    (None, Some(_)) => {
+                    (None, Some(cursor)) => {
                         if symbol == '\n' {
-                            self.output.send(Control::Enter)?
+                            self.output.send(Control::GoTo(cursor))?
                         } else {
                             source.prev();
                         }

@@ -31,24 +31,22 @@ where
             done,
         }
     }
-
-    pub(crate) fn run(self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
-        for symbol in self.source {
-            match self.done.try_recv() {
-                Ok(Control::Stop) => break,
-                _ => (),
+    pub(crate) fn run(mut self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
+        loop {
+            if let Ok(Control::Stop) = self.done.try_recv() {
+                break
             }
-
-            match symbol.expect("Failed to parse symbol") {
-                Key::Ctrl(c) if c == 'c' => {
-                    self.output.send(Parsed::Stop)?;
-                    break;
+            if let Some (symbol) = self.source.next() {
+                match symbol.expect("Failed to parse symbol") {
+                    Key::Ctrl(c) if c == 'c' => {
+                        self.output.send(Parsed::Stop)?;
+                        break
+                    },
+                    Key::Backspace => self.output.send(Parsed::Backspace)?,
+                    Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
+                    _ => {}
                 }
-                Key::Backspace => self.output.send(Parsed::Backspace)?,
-                //            Key::Char('\n') => self.output.send(Parsed::Enter)?,
-                Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
-                _ => {}
-            }
+            } 
         }
         Ok(())
     }

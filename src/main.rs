@@ -1,4 +1,4 @@
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
 use std::{io, thread};
 
 use termion::input::TermRead;
@@ -15,12 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_text = if let Some(path) = std::env::args().nth(1) {
         std::fs::read_to_string(&path)?
     } else {
-        String::from("Hey dawg, this \nis a test string \nfor you to practice!")
+        String::from("Hey dawg, this\nis a test string\nfor you to practice!")
     };
 
     // Init communication channels
     // Done channel for remote parser shutdown.
-    let (tx_done, rx_done): (Sender<Control>, Receiver<Control>) = channel();
+    let (tx_done, rx_done): (SyncSender<Control>, Receiver<Control>) = sync_channel(0);
     // Parsed to connect Parser with Checker
     let (tx_parsed, rx_parsed): (Sender<Parsed>, Receiver<Parsed>) = channel();
     // Checked to connect Checker with Renderer
