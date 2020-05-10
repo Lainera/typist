@@ -9,15 +9,24 @@ use crate::Control;
 pub(crate) struct Renderer {
     stdout: RawTerminal<Stdout>,
     input: Receiver<Control>,
+    window_size: usize,
+    row_modifier: usize,
 }
 
 impl Renderer {
     pub(crate) fn new(stdout: Stdout, input: Receiver<Control>) -> Result<Self, io::Error> {
         let stdout = stdout.into_raw_mode()?;
-        Ok(Self { stdout, input })
+        Ok(Self { 
+            stdout, 
+            input, 
+            window_size: 2,
+            row_modifier: 0,
+        })
     }
 
     pub(crate) fn run(mut self) -> Result<(), io::Error> {
+        let window_size = self.window_size;
+        let mut row_modifier = self.row_modifier;
         for c in self.input {
             match c {
                 Control::Stop => {
@@ -33,13 +42,38 @@ impl Renderer {
                     symbol,
                     termion::cursor::Left(1)
                 )?,
-                Control::Previous(None, (row, column)) | Control::Next(None, (row, column)) => {
+                Control::Previous(None, (row, column)) => if row < window_size - 1 {
                     write!(
                         self.stdout,
                         "{}",
                         // Termion is one-based, not zero based
                         termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
                     )?
+                } else {
+                    row_modifier -= 1;
+                    write!(
+                       self.stdout,
+                       "{}{}",
+                       termion::scroll::Down(1),
+                       termion::cursor::Goto((column + 1) as u16, (row - row_modifier + 1) as u16),
+                    )?
+                },
+                Control::Next(None, (row, column)) => if row < window_size {
+                    write!(
+                        self.stdout,
+                        "{}",
+                        // Termion is one-based, not zero based
+                        termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
+                    )?
+                } else {
+                    row_modifier += 1;
+                    write!(
+                        self.stdout, 
+                        "{}\rfor you to practice!{}", 
+                        termion::scroll::Up(1),
+                        termion::cursor::Goto(0, (row - row_modifier + 1) as u16)
+                    )?
+
                 }
                 Control::Next(Some(result), _) => match result {
                     Ok(s) => write!(
@@ -72,7 +106,7 @@ impl Renderer {
             termion::cursor::Hide
         )?;
 
-        for line in word.lines() {
+        for line in word.lines().take(2) {
             write!(self.stdout, "{}\n\r", line)?
         }
 
