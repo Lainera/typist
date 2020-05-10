@@ -1,5 +1,6 @@
-use crate::Parsed;
+use crate::{Parsed, Source};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::Arc;
 
 pub(crate) enum Control {
     Previous(Option<char>, (usize, usize)),
@@ -7,34 +8,28 @@ pub(crate) enum Control {
     Stop,
 }
 
-struct StringCursor {
-    source: Vec<Vec<char>>,
+struct Cursor {
+    source: Arc<Source>,
     cursor: (usize, usize),
 }
 
-impl StringCursor {
-    fn new<S: Into<String>>(source: S) -> Self {
-        let source: Vec<Vec<char>> = source
-            .into()
-            .lines()
-            .map(|line| line.chars().collect::<Vec<char>>())
-            .collect();
-        Self {
-            source,
+impl Cursor {
+    fn new(source: Arc<Source>) -> Self {
+        Cursor {
             cursor: (0, 0),
+            source,
         }
     }
 
-    fn next(&mut self) -> (Option<&char>, Option<(usize, usize)>) {
+    fn next(&mut self) -> (Option<char>, Option<(usize, usize)>) {
         let (row, column) = self.cursor;
-        let line = self.source.get(row).expect("Overflow on the lines next");
-        let symbol = line.get(column);
-        if symbol.is_some() {
+        let symbol = self.source.get_char(row, column); 
+        if let Some(&symbol) = symbol {
             self.cursor = (row, column + 1);
-            return (symbol, Some(self.cursor));
+            return (Some(symbol), Some(self.cursor));
         }
         // No characters left in current line
-        if self.source.get(row + 1).is_some() {
+        if self.source.get_line(row + 1).is_some() {
             self.cursor = (row + 1, 0);
             return (None, Some(self.cursor));
         }
@@ -42,22 +37,18 @@ impl StringCursor {
         return (None, None);
     }
 
-    fn prev(&mut self) -> (Option<&char>, Option<(usize, usize)>) {
+    fn prev(&mut self) -> (Option<char>, Option<(usize, usize)>) {
         let (row, column) = self.cursor;
         // There are still preceding characters
         if column > 0 {
-            let line = self
-                .source
-                .get(row)
-                .expect("Overflow on the lines previous");
+            let &symbol = self.source.get_char(row, column - 1).expect("Checker cursor desync");
             self.cursor = (row, column - 1);
-            return (line.get(column - 1), Some(self.cursor));
+            return (Some(symbol), Some(self.cursor));
         }
         // There are still preceding lines
         if row > 0 {
-            let line = self
-                .source
-                .get(row - 1)
+            let line = self.source
+                .get_line(row - 1)
                 .expect("Overflow on the lines previous");
             self.cursor = (row - 1, line.len());
             // Moving back one line leaves us on the spot that was occupied by `\n` or `\r\n`
@@ -70,7 +61,7 @@ impl StringCursor {
 }
 
 pub(crate) struct Checker {
-    source: StringCursor,
+    cursor: Cursor, 
     input: Receiver<Parsed>,
     output: Sender<Control>,
     done: SyncSender<()>,
@@ -81,19 +72,19 @@ impl Checker {
         input: Receiver<Parsed>,
         output: Sender<Control>,
         done: SyncSender<()>,
-        source_string: String,
+        source: Arc<Source>,
     ) -> Self {
-        let source = StringCursor::new(source_string);
+        let cursor = Cursor::new(source);
         Self {
             done,
             input,
             output,
-            source,
+            cursor,
         }
     }
-
+    
     pub(crate) fn run(self) -> Result<(), errors::CheckerError> {
-        let mut source = self.source;
+        let mut source_cursor = self.cursor;
         for parsed in self.input {
             match parsed {
                 Parsed::Stop => {
@@ -101,8 +92,8 @@ impl Checker {
                     break;
                 }
                 Parsed::Backspace => {
-                    match source.prev() {
-                        (Some(&source_symbol), Some(cursor)) => self
+                    match source_cursor.prev() {
+                        (Some(source_symbol), Some(cursor)) => self
                             .output
                             .send(Control::Previous(Some(source_symbol), cursor))?,
                         (None, Some(cursor)) => {
@@ -112,8 +103,8 @@ impl Checker {
                         _ => {}
                     }
                 }
-                Parsed::Symbol(symbol) => match source.next() {
-                    (Some(&source_symbol), Some(cursor)) => {
+                Parsed::Symbol(symbol) => match source_cursor.next() {
+                    (Some(source_symbol), Some(cursor)) => {
                         if source_symbol == symbol {
                             self.output
                                 .send(Control::Next(Some(Ok(source_symbol)), cursor))?
@@ -126,7 +117,7 @@ impl Checker {
                         if symbol == '\n' {
                             self.output.send(Control::Next(None, cursor))?
                         } else {
-                            source.prev();
+                            source_cursor.prev();
                         }
                     }
                     (None, None) => {
