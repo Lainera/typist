@@ -1,5 +1,9 @@
 use crate::Parsed;
-use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::mpsc::{
+    Receiver, 
+    Sender, 
+    SyncSender,
+};
 
 pub(crate) enum Control {
     Backspace(char),
@@ -74,14 +78,14 @@ pub(crate) struct Checker {
     source: StringCursor,
     input: Receiver<Parsed>,
     output: Sender<Control>,
-    done: SyncSender<Control>,
+    done: SyncSender<()>,
 }
 
 impl Checker {
     pub(crate) fn new(
         input: Receiver<Parsed>,
         output: Sender<Control>,
-        done: SyncSender<Control>,
+        done: SyncSender<()>,
         source_string: String,
     ) -> Self {
         let source = StringCursor::new(source_string);
@@ -93,7 +97,7 @@ impl Checker {
         }
     }
 
-    pub(crate) fn run(self) -> Result<(), std::sync::mpsc::SendError<Control>> {
+    pub(crate) fn run(self) -> Result<(), errors::CheckerError> {
         let mut source = self.source;
         for parsed in self.input {
             match parsed {
@@ -127,7 +131,7 @@ impl Checker {
                         }
                     }
                     (None, None) => {
-                        self.done.send(Control::Stop)?;
+                        self.done.send(())?;
                         self.output.send(Control::Stop)?;
                         break;
                     }
@@ -137,5 +141,43 @@ impl Checker {
             }
         }
         Ok(())
+    }
+}
+
+mod errors {
+    use crate::Control;
+    use std::sync::mpsc::SendError;
+
+    #[derive(Debug)]
+    pub(crate) enum CheckerError {
+        Control(SendError<Control>),
+        Done(SendError<()>),
+    }
+
+    impl std::fmt::Display for CheckerError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Checker error \n {}", self) 
+        }
+    }
+
+    impl std::error::Error for CheckerError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+           match self {
+                CheckerError::Control(error) => Some(error),
+                CheckerError::Done(error) => Some(error),
+           } 
+        }
+    }
+
+    impl From<SendError<Control>> for CheckerError {
+        fn from(error: SendError<Control>) -> Self {
+            CheckerError::Control(error)
+        }
+    }
+
+    impl From<SendError<()>> for CheckerError {
+        fn from(error: SendError<()>) -> Self {
+            CheckerError::Done(error)
+        }
     }
 }

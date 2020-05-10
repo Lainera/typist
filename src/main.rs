@@ -1,4 +1,10 @@
-use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{
+    channel, 
+    sync_channel, 
+    Receiver, 
+    Sender, 
+    SyncSender,
+};
 use std::{io, thread};
 
 use termion::input::TermRead;
@@ -20,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Init communication channels
     // Done channel for remote parser shutdown.
-    let (tx_done, rx_done): (SyncSender<Control>, Receiver<Control>) = sync_channel(0);
+    let (tx_done, rx_done): (SyncSender<()>, Receiver<()>) = sync_channel(0);
     // Parsed to connect Parser with Checker
     let (tx_parsed, rx_parsed): (Sender<Parsed>, Receiver<Parsed>) = channel();
     // Checked to connect Checker with Renderer
@@ -43,6 +49,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join()
         .expect("Renderer thread panicked")
         .expect("Renderer failed to flush");
-
     Ok(())
 }

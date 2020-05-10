@@ -1,7 +1,9 @@
-use crate::Control;
 use std::{
     io,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{
+        Receiver, 
+        Sender
+    },
 };
 use termion::event::Key;
 
@@ -17,14 +19,14 @@ where
 {
     source: I,
     output: Sender<Parsed>,
-    done: Receiver<Control>,
+    done: Receiver<()>,
 }
 
 impl<I> Parser<I>
 where
     I: Iterator<Item = Result<Key, io::Error>>,
 {
-    pub(crate) fn new(source: I, done: Receiver<Control>, output: Sender<Parsed>) -> Self {
+    pub(crate) fn new(source: I, done: Receiver<()>, output: Sender<Parsed>) -> Self {
         Parser {
             source,
             output,
@@ -33,7 +35,7 @@ where
     }
     pub(crate) fn run(mut self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
         loop {
-            if let Ok(Control::Stop) = self.done.try_recv() {
+            if let Ok(_) = self.done.try_recv() {
                 break
             }
             if let Some (symbol) = self.source.next() {
