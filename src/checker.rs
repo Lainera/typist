@@ -6,9 +6,8 @@ use std::sync::mpsc::{
 };
 
 pub(crate) enum Control {
-    Backspace(char),
-    GoTo((usize, usize)),
-    Symbol(Result<char, char>),
+    Previous(Option<char>, (usize, usize)),
+    Next(Option<Result<char, char>>, (usize, usize)),
     Stop,
 }
 
@@ -107,25 +106,25 @@ impl Checker {
                 }
                 Parsed::Backspace => {
                     match source.prev() {
-                        (Some(&source_symbol), Some(_)) => {
-                            self.output.send(Control::Backspace(source_symbol))?
+                        (Some(&source_symbol), Some(cursor)) => {
+                            self.output.send(Control::Previous(Some(source_symbol), cursor))?
                         }
-                        (None, Some(cursor)) => self.output.send(Control::GoTo(cursor))?,
+                        (None, Some(cursor)) => self.output.send(Control::Previous(None, cursor))?,
                         // Beginning of the string, backspacing does nothing
                         _ => {}
                     }
                 }
                 Parsed::Symbol(symbol) => match source.next() {
-                    (Some(&source_symbol), Some(_)) => {
+                    (Some(&source_symbol), Some(cursor)) => {
                         if source_symbol == symbol {
-                            self.output.send(Control::Symbol(Ok(source_symbol)))?
+                            self.output.send(Control::Next(Some(Ok(source_symbol)), cursor))?
                         } else {
-                            self.output.send(Control::Symbol(Err(source_symbol)))?
+                            self.output.send(Control::Next(Some(Err(source_symbol)), cursor))?
                         }
                     }
                     (None, Some(cursor)) => {
                         if symbol == '\n' {
-                            self.output.send(Control::GoTo(cursor))?
+                            self.output.send(Control::Next(None, cursor))?
                         } else {
                             source.prev();
                         }

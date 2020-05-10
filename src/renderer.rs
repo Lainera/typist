@@ -16,7 +16,7 @@ impl Renderer {
         let stdout = stdout.into_raw_mode()?;
         Ok(Self { stdout, input })
     }
-
+    
     pub(crate) fn run(mut self) -> Result<(), io::Error> {
         for c in self.input {
             match c {
@@ -26,20 +26,20 @@ impl Renderer {
                     self.stdout.flush()?;
                     break;
                 }
-                Control::Backspace(symbol) => write!(
+                Control::Previous(Some(symbol), _) => write!(
                     self.stdout,
                     "{}{}{}",
                     termion::cursor::Left(1),
                     symbol,
                     termion::cursor::Left(1)
                 )?,
-                Control::GoTo((row, column)) => write!(
+                Control::Previous(None, (row, column)) | Control::Next(None, (row, column)) => write!(
                     self.stdout,
                     "{}",
                     // Termion is one-based, not zero based
                     termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
                 )?,
-                Control::Symbol(result) => match result {
+                Control::Next(Some(result), _) => match result {
                     Ok(s) => write!(
                         self.stdout,
                         "{}{}{}",
