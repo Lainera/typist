@@ -1,9 +1,5 @@
 use crate::Parsed;
-use std::sync::mpsc::{
-    Receiver, 
-    Sender, 
-    SyncSender,
-};
+use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 pub(crate) enum Control {
     Previous(Option<char>, (usize, usize)),
@@ -106,10 +102,12 @@ impl Checker {
                 }
                 Parsed::Backspace => {
                     match source.prev() {
-                        (Some(&source_symbol), Some(cursor)) => {
-                            self.output.send(Control::Previous(Some(source_symbol), cursor))?
+                        (Some(&source_symbol), Some(cursor)) => self
+                            .output
+                            .send(Control::Previous(Some(source_symbol), cursor))?,
+                        (None, Some(cursor)) => {
+                            self.output.send(Control::Previous(None, cursor))?
                         }
-                        (None, Some(cursor)) => self.output.send(Control::Previous(None, cursor))?,
                         // Beginning of the string, backspacing does nothing
                         _ => {}
                     }
@@ -117,9 +115,11 @@ impl Checker {
                 Parsed::Symbol(symbol) => match source.next() {
                     (Some(&source_symbol), Some(cursor)) => {
                         if source_symbol == symbol {
-                            self.output.send(Control::Next(Some(Ok(source_symbol)), cursor))?
+                            self.output
+                                .send(Control::Next(Some(Ok(source_symbol)), cursor))?
                         } else {
-                            self.output.send(Control::Next(Some(Err(source_symbol)), cursor))?
+                            self.output
+                                .send(Control::Next(Some(Err(source_symbol)), cursor))?
                         }
                     }
                     (None, Some(cursor)) => {
@@ -155,16 +155,16 @@ mod errors {
 
     impl std::fmt::Display for CheckerError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "Checker error \n {}", self) 
+            write!(f, "Checker error \n {}", self)
         }
     }
 
     impl std::error::Error for CheckerError {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-           match self {
+            match self {
                 CheckerError::Control(error) => Some(error),
                 CheckerError::Done(error) => Some(error),
-           } 
+            }
         }
     }
 

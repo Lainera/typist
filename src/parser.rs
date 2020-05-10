@@ -1,9 +1,6 @@
 use std::{
     io,
-    sync::mpsc::{
-        Receiver, 
-        Sender
-    },
+    sync::mpsc::{Receiver, Sender},
 };
 use termion::event::Key;
 
@@ -36,19 +33,19 @@ where
     pub(crate) fn run(mut self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
         loop {
             if let Ok(_) = self.done.try_recv() {
-                break
+                break;
             }
-            if let Some (symbol) = self.source.next() {
+            if let Some(symbol) = self.source.next() {
                 match symbol.expect("Failed to parse symbol") {
                     Key::Ctrl(c) if c == 'c' => {
                         self.output.send(Parsed::Stop)?;
-                        break
-                    },
+                        break;
+                    }
                     Key::Backspace => self.output.send(Parsed::Backspace)?,
                     Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
                     _ => {}
                 }
-            } 
+            }
         }
         Ok(())
     }

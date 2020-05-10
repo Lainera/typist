@@ -1,10 +1,4 @@
-use std::sync::mpsc::{
-    channel, 
-    sync_channel, 
-    Receiver, 
-    Sender, 
-    SyncSender,
-};
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
 use std::{io, thread};
 
 use termion::input::TermRead;
