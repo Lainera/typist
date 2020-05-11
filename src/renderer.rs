@@ -13,7 +13,7 @@ pub(crate) struct Renderer {
     stdout: RawTerminal<Stdout>,
     input: Receiver<Control>,
     source: Arc<Source>,
-    window_size: usize,
+    window_size: u16,
     cursor: (usize, usize),
 }
 
@@ -28,12 +28,14 @@ fn absolute_difference(a: usize, b: usize) -> u32 {
 
 impl Renderer {
     pub(crate) fn new(stdout: Stdout, input: Receiver<Control>, source: Arc<Source>) -> Result<Self, io::Error> {
+        let (_, window_size) = termion::terminal_size()?;
         let stdout = stdout.into_raw_mode()?;
         Ok(Self {
             stdout,
             input,
             source,
-            window_size: 2,
+            // last line is not used
+            window_size: window_size - 1,
             cursor: (0, 0)
         })
     }
@@ -143,15 +145,14 @@ impl Renderer {
         Ok(())
     }
     
-    fn draw_line(&mut self, n: usize) -> Result<(), io::Error> {
-        if let Some(line) = self.source.get_line(n) {
-            let to_write = line.iter().fold(String::new(), |mut acc, &c| {
-                acc.push(c.clone());
-                acc
-            });
-            write!(self.stdout, "{}\r\n", to_write)?;
-        }
-        Ok(())
+    fn get_line(&mut self, n: usize) -> Option<String> {
+        self.source.get_line(n)
+            .map(|line| {
+                line.iter().fold(String::new(), |mut acc, &c| {
+                    acc.push(c.clone());
+                    acc
+                })
+            })
     }
 
     pub(crate) fn draw_initial(&mut self) -> Result<(), io::Error> {
@@ -164,7 +165,9 @@ impl Renderer {
         )?;
 
         for line in 0..self.window_size {
-           self.draw_line(line)?; 
+           self.get_line(line as usize).map(|line| {
+                write!(self.stdout, "{}\r\n", line)
+           }); 
         }
 
         write!(
