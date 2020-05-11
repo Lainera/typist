@@ -14,11 +14,18 @@ pub(crate) struct Renderer {
     input: Receiver<Control>,
     source: Arc<Source>,
     window_size: usize,
-    row_modifier: usize,
+    cursor: (usize, usize),
 }
 
-// Try out passing strings separately,
-// Figure out whether it would even work.
+fn absolute_difference(a: usize, b: usize) -> u32 {
+   let i = a as i32 - b as i32;
+    if i < 0 {
+        -i as u32
+    } else {
+        i as u32
+    }
+}
+
 impl Renderer {
     pub(crate) fn new(stdout: Stdout, input: Receiver<Control>, source: Arc<Source>) -> Result<Self, io::Error> {
         let stdout = stdout.into_raw_mode()?;
@@ -27,14 +34,14 @@ impl Renderer {
             input,
             source,
             window_size: 2,
-            row_modifier: 0,
+            cursor: (0, 0)
         })
     }
 
     pub(crate) fn run(mut self) -> Result<(), io::Error> {
         self.draw_initial()?;
         let window_size = self.window_size;
-        let mut row_modifier = self.row_modifier;
+        let (mut head, mut tail) = self.cursor;
         for c in self.input {
             match c {
                 Control::Stop => {
@@ -51,42 +58,67 @@ impl Renderer {
                     termion::cursor::Left(1)
                 )?,
                 Control::Previous(None, (row, column)) => {
-                    if row < window_size - 1 {
+                    if tail > 0 && head > 0 && absolute_difference(head, tail) == 0 {
+                        tail -= 1;
+                        head -= 1;
+                        let line = self.source.get_line(tail).unwrap();
+                        let as_str = line.iter().fold(String::new(), |mut acc, &c| {
+                            acc.push(c);
+                            acc
+                        });
                         write!(
                             self.stdout,
-                            "{}",
-                            // Termion is one-based, not zero based
-                            termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
-                        )?
-                    } else {
-                        row_modifier -= 1;
-                        write!(
-                            self.stdout,
-                            "{}{}",
+                            "{}{}{}{}",
                             termion::scroll::Down(1),
+                            termion::cursor::Goto(1, 1),
+                            as_str,
                             termion::cursor::Goto(
                                 (column + 1) as u16,
-                                (row - row_modifier + 1) as u16
+                                (row - tail + 1) as u16
                             ),
                         )?
-                    }
-                }
-                Control::Next(None, (row, column)) => {
-                    if row < window_size {
+                    } else {
+                        head -= 1;
                         write!(
                             self.stdout,
                             "{}",
-                            // Termion is one-based, not zero based
-                            termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
-                        )?
-                    } else {
-                        row_modifier += 1;
+                            termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
+                        )?;
+                    } 
+                }
+                Control::Next(None, (row, column)) => {
+                    if absolute_difference(tail, head + 1) < window_size as u32 {
+                        head += 1;
                         write!(
                             self.stdout,
-                            "{}\rfor you to practice!{}",
-                            termion::scroll::Up(1),
-                            termion::cursor::Goto(0, (row - row_modifier + 1) as u16)
-                        )?
+                            "{}",
+                            termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
+                        )?;
+                    } else {
+                        if let Some(line) = self.source.get_line(head + 1) {
+                            let as_str = line.iter().fold(String::new(), |mut acc, &c| {
+                                acc.push(c);
+                                acc
+                            });
+                            
+                            head += 1;
+                            tail += 1;
+                            
+                            write!(
+                                self.stdout,
+                                "{}\r{}{}",
+                                termion::scroll::Up(1),
+                                as_str,
+                                termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
+                                )?;
+
+                        } else {
+                            write!(
+                                self.stdout,
+                                "{}",
+                                termion::cursor::Goto(1, (row - tail + 1) as u16)
+                            )?
+                        };
                     }
                 }
                 Control::Next(Some(result), _) => match result {
@@ -131,7 +163,7 @@ impl Renderer {
             termion::cursor::Hide
         )?;
 
-        for line in 0..2 {
+        for line in 0..self.window_size {
            self.draw_line(line)?; 
         }
 
