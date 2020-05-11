@@ -52,6 +52,7 @@ impl Renderer {
                     self.stdout.flush()?;
                     break;
                 }
+                // Moving cursor horizontally within same line.
                 Control::Previous(Some(symbol), _) => write!(
                     self.stdout,
                     "{}{}{}",
@@ -59,15 +60,24 @@ impl Renderer {
                     symbol,
                     termion::cursor::Left(1)
                 )?,
+                // At the beginning of the line and need to move cursor up
                 Control::Previous(None, (row, column)) => {
                     if tail > 0 && head > 0 && absolute_difference(head, tail) == 0 {
+                    // need to scroll up because head == tail and we are not at the start yet.
+                    // Check if line still exists in the source, then move head and tail up.
                         tail -= 1;
                         head -= 1;
+                    // Need to request line as collection of chars, and errors for that line from
+                    // checker, merge both into colored line.
                         let line = self.source.get_line(tail).unwrap();
                         let as_str = line.iter().fold(String::new(), |mut acc, &c| {
                             acc.push(c);
                             acc
                         });
+                    // 0 < tail < row; To get actual position on the screen we need to subtract
+                    // tail from row. Or just go to 1, that also works, because we just scrolled
+                    // Down one line, printed contents and have to put cursor at the end of that
+                    // line.
                         write!(
                             self.stdout,
                             "{}{}{}{}",
@@ -80,6 +90,8 @@ impl Renderer {
                             ),
                         )?
                     } else {
+                    // backspacing to previous line, but we are not at the very first line yet, so
+                    // no need to move tail up. Update head and proceed.
                         head -= 1;
                         write!(
                             self.stdout,
@@ -88,8 +100,10 @@ impl Renderer {
                         )?;
                     } 
                 }
+                // At the end of the line
                 Control::Next(None, (row, column)) => {
                     if absolute_difference(tail, head + 1) < window_size as u32 {
+                        // Haven't exceeded window size, jump onto next line.
                         head += 1;
                         write!(
                             self.stdout,
@@ -97,7 +111,9 @@ impl Renderer {
                             termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
                         )?;
                     } else {
+                        // Exceeded window size, and
                         if let Some(line) = self.source.get_line(head + 1) {
+                            // there is more! get next line, draw, update counters. 
                             let as_str = line.iter().fold(String::new(), |mut acc, &c| {
                                 acc.push(c);
                                 acc
@@ -115,6 +131,8 @@ impl Renderer {
                                 )?;
 
                         } else {
+                            // There is no more lines, shouldn't happen because by that time
+                            // Checker should've sent shutdown... 
                             write!(
                                 self.stdout,
                                 "{}",
