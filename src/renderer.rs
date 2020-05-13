@@ -12,9 +12,90 @@ use crate::{Control, Source};
 pub(crate) struct Renderer {
     stdout: RawTerminal<Stdout>,
     input: Receiver<Control>,
-    source: Arc<Source>,
+    cursor: Cursor, 
+}
+
+struct Cursor {
+    head: usize,
+    tail: usize,
     window_size: u16,
-    cursor: (usize, usize),
+    source: Arc<Source>,
+}
+
+impl Cursor {
+    fn new(source: Arc<Source>) -> Result<Self, io::Error> {
+        let (_, window_size) = termion::terminal_size()?;
+        Ok(Self {
+            head: 0,
+            tail: 0,
+            source,
+            window_size: window_size - 1,
+        })
+    }
+    
+    fn can_scroll_up(&self) -> bool {
+        self.head > 0 && 
+        self.tail > 0 && 
+        absolute_difference(self.head, self.tail) == 0
+    }
+
+    fn is_at_the_bottom_of_the_screen(&self) -> bool {
+        absolute_difference(self.head + 1, self.tail) as u16 >= self.window_size
+    }
+    
+    // Need to be able to move head within terminal window 
+    fn move_head_up(&mut self) {
+        if self.head.checked_sub(1).is_some() {
+            self.head -= 1;
+        };
+    }
+
+    // As well as be able to move window itself.
+    fn scroll_up(&mut self) {
+        match (self.head.checked_sub(1), self.tail.checked_sub(1)) {
+            (Some(adjusted_head), Some(adjusted_tail)) => {
+                self.head = adjusted_head;
+                self.tail = adjusted_tail; 
+            },
+            _ => ()
+        }
+    }
+    
+    fn move_head_down(&mut self) {
+        self.head += 1;
+    }
+    
+    fn scroll_down(&mut self) {
+        self.head += 1;
+        self.tail += 1;
+    }
+
+    fn get_line(&self, n: usize) -> Option<String> {
+        self.source.get_line(n)
+            .map(|line| {
+                line.iter().fold(String::new(), |mut acc, &c| {
+                    acc.push(c.clone());
+                    acc
+                })
+            })
+    }
+
+    fn get_bottom_line(&self) -> Option<String> {
+        self.get_line(self.head)
+    }
+
+    fn get_top_line(&self) -> Option<String> {
+        self.get_line(self.tail)
+    }
+    
+    // Tail represents top of the screen, thus actual
+    // position of cursor on the screen is row - tail
+    fn adjust_row(&self, row: usize) -> usize {
+        match row.checked_sub(self.tail) {
+            Some(adjusted) => adjusted,
+            None => row,
+        }
+    }
 }
 
 fn absolute_difference(a: usize, b: usize) -> u32 {
@@ -26,24 +107,25 @@ fn absolute_difference(a: usize, b: usize) -> u32 {
     }
 }
 
+// ANSI terminals are 1 based
+fn ansi_goto(row: usize, column: usize) -> termion::cursor::Goto {
+   termion::cursor::Goto((column + 1) as u16, (row + 1) as u16) 
+}
+
 impl Renderer {
     pub(crate) fn new(stdout: Stdout, input: Receiver<Control>, source: Arc<Source>) -> Result<Self, io::Error> {
-        let (_, window_size) = termion::terminal_size()?;
         let stdout = stdout.into_raw_mode()?;
+        let cursor = Cursor::new(source)?;
         Ok(Self {
             stdout,
             input,
-            source,
-            // last line is not used
-            window_size: window_size - 1,
-            cursor: (0, 0)
+            cursor,
         })
     }
 
     pub(crate) fn run(mut self) -> Result<(), io::Error> {
         self.draw_initial()?;
-        let window_size = self.window_size;
-        let (mut head, mut tail) = self.cursor;
+        let mut cursor = self.cursor;
         for c in self.input {
             match c {
                 Control::Stop => {
@@ -52,7 +134,7 @@ impl Renderer {
                     self.stdout.flush()?;
                     break;
                 }
-                // Moving cursor horizontally within same line.
+                // Backspacing within same line.
                 Control::Previous(Some(symbol), _) => write!(
                     self.stdout,
                     "{}{}{}",
@@ -61,86 +143,47 @@ impl Renderer {
                     termion::cursor::Left(1)
                 )?,
                 // At the beginning of the line and need to move cursor up
-                Control::Previous(None, (row, column)) => {
-                    if tail > 0 && head > 0 && absolute_difference(head, tail) == 0 {
-                    // need to scroll up because head == tail and we are not at the start yet.
-                    // Check if line still exists in the source, then move head and tail up.
-                        tail -= 1;
-                        head -= 1;
-                    // Need to request line as collection of chars, and errors for that line from
-                    // checker, merge both into colored line.
-                        let line = self.source.get_line(tail).unwrap();
-                        let as_str = line.iter().fold(String::new(), |mut acc, &c| {
-                            acc.push(c);
-                            acc
-                        });
-                    // 0 < tail < row; To get actual position on the screen we need to subtract
-                    // tail from row. Or just go to 1, that also works, because we just scrolled
-                    // Down one line, printed contents and have to put cursor at the end of that
-                    // line.
-                        write!(
-                            self.stdout,
-                            "{}{}{}{}",
-                            termion::scroll::Down(1),
-                            termion::cursor::Goto(1, 1),
-                            as_str,
-                            termion::cursor::Goto(
-                                (column + 1) as u16,
-                                (row - tail + 1) as u16
-                            ),
-                        )?
-                    } else {
-                    // backspacing to previous line, but we are not at the very first line yet, so
-                    // no need to move tail up. Update head and proceed.
-                        head -= 1;
-                        write!(
-                            self.stdout,
-                            "{}",
-                            termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
-                        )?;
-                    } 
-                }
+                Control::Previous(None, (row, column)) => if cursor.can_scroll_up() {
+                    cursor.scroll_up();
+                    let line = cursor.get_top_line().expect("Render cursor is not aligned");
+                    write!(
+                        self.stdout,
+                        "{}{}{}{}",
+                        // cursor scrolls up, but terminal 
+                        // actually scrolls down to make room for newline
+                        termion::scroll::Down(1),
+                        ansi_goto(0, 0),
+                        line,
+                        ansi_goto(0, column),
+                    )?
+                } else {
+                    cursor.move_head_up(); 
+                    write!(
+                        self.stdout,
+                        "{}",
+                        ansi_goto(cursor.adjust_row(row), column),
+                    )?;
+                },
                 // At the end of the line
-                Control::Next(None, (row, column)) => {
-                    if absolute_difference(tail, head + 1) < window_size as u32 {
-                        // Haven't exceeded window size, jump onto next line.
-                        head += 1;
+                Control::Next(None, (row, column)) => if cursor.is_at_the_bottom_of_the_screen() {
+                    cursor.scroll_down();
+                    if let Some(line) = cursor.get_bottom_line() {
                         write!(
                             self.stdout,
-                            "{}",
-                            termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
-                        )?;
-                    } else {
-                        // Exceeded window size, and
-                        if let Some(line) = self.source.get_line(head + 1) {
-                            // there is more! get next line, draw, update counters. 
-                            let as_str = line.iter().fold(String::new(), |mut acc, &c| {
-                                acc.push(c);
-                                acc
-                            });
-                            
-                            head += 1;
-                            tail += 1;
-                            
-                            write!(
-                                self.stdout,
-                                "{}\r{}{}",
-                                termion::scroll::Up(1),
-                                as_str,
-                                termion::cursor::Goto((column + 1) as u16, (row - tail + 1) as u16)
-                                )?;
-
-                        } else {
-                            // There is no more lines, shouldn't happen because by that time
-                            // Checker should've sent shutdown... 
-                            write!(
-                                self.stdout,
-                                "{}",
-                                termion::cursor::Goto(1, (row - tail + 1) as u16)
-                            )?
-                        };
-                    }
-                }
+                            "{}\r{}{}",
+                            termion::scroll::Up(1),
+                            line,
+                            ansi_goto(cursor.adjust_row(row), column),
+                        )?
+                    } 
+                } else {
+                    cursor.move_head_down();
+                    write!(
+                        self.stdout,
+                        "{}",
+                        ansi_goto(cursor.adjust_row(row), column),
+                    )?;
+                },
                 Control::Next(Some(result), _) => match result {
                     Ok(s) => write!(
                         self.stdout,
@@ -162,28 +205,18 @@ impl Renderer {
         }
         Ok(())
     }
-    
-    fn get_line(&mut self, n: usize) -> Option<String> {
-        self.source.get_line(n)
-            .map(|line| {
-                line.iter().fold(String::new(), |mut acc, &c| {
-                    acc.push(c.clone());
-                    acc
-                })
-            })
-    }
 
     pub(crate) fn draw_initial(&mut self) -> Result<(), io::Error> {
         write!(
             self.stdout,
             "{}{}{}",
             termion::clear::All,
-            termion::cursor::Goto(1, 1),
+            ansi_goto(0, 0),
             termion::cursor::Hide
         )?;
 
-        for line in 0..self.window_size {
-           self.get_line(line as usize).map(|line| {
+        for line in 0..self.cursor.window_size {
+           self.cursor.get_line(line as usize).map(|line| {
                 write!(self.stdout, "{}\r\n", line)
            }); 
         }
@@ -191,7 +224,7 @@ impl Renderer {
         write!(
             self.stdout,
             "{}{}{}",
-            termion::cursor::Goto(1, 1),
+            ansi_goto(0, 0),
             termion::cursor::Show,
             termion::cursor::BlinkingUnderline
         )?;
