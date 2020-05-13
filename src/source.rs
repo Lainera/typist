@@ -1,11 +1,16 @@
 /// Abstraction over source input
 /// Enables consumers to request char by row, col
 /// And line by row
-pub(crate) struct Source {
-    source: Vec<Vec<char>>,
+
+pub(crate) trait Source: Send + Sync {
+    fn get_char(&self, row: usize, column: usize) -> Option<&char>;
+    fn get_line(&self, row: usize) -> Option<&Vec<char>>;
 }
 
-impl Source {
+pub(crate) struct SimpleSource {
+    source: Vec<Vec<char>>,
+}
+impl SimpleSource {
     pub(crate) fn new<S: Into<String>>(source: S) -> Self {
         let source: Vec<Vec<char>> = source
             .into()
@@ -14,8 +19,10 @@ impl Source {
             .collect();
         Self { source }
     }
+}
 
-    pub(crate) fn get_char(&self, row: usize, column: usize) -> Option<&char> {
+impl Source for SimpleSource {
+    fn get_char(&self, row: usize, column: usize) -> Option<&char> {
         if let Some(line) = self.source.get(row) {
             line.get(column)
         } else {
@@ -23,7 +30,8 @@ impl Source {
         }
     }
 
-    pub(crate) fn get_line(&self, row: usize) -> Option<&Vec<char>> {
+    fn get_line(&self, row: usize) -> Option<&Vec<char>> {
         self.source.get(row)
     }
 }
+

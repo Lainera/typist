@@ -1,4 +1,4 @@
-use crate::{Parsed, Source};
+use crate::{Parsed, source::Source};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::sync::Arc;
 
@@ -9,12 +9,12 @@ pub(crate) enum Control {
 }
 
 struct Cursor {
-    source: Arc<Source>,
+    source: Arc<dyn Source>,
     cursor: (usize, usize),
 }
 
 impl Cursor {
-    fn new(source: Arc<Source>) -> Self {
+    fn new(source: Arc<dyn Source>) -> Self {
         Cursor {
             cursor: (0, 0),
             source,
@@ -72,7 +72,7 @@ impl Checker {
         input: Receiver<Parsed>,
         output: Sender<Control>,
         done: SyncSender<()>,
-        source: Arc<Source>,
+        source: Arc<dyn Source>,
     ) -> Self {
         let cursor = Cursor::new(source);
         Self {
@@ -84,7 +84,7 @@ impl Checker {
     }
     
     pub(crate) fn run(self) -> Result<(), errors::CheckerError> {
-        let mut source_cursor = self.cursor;
+        let mut cursor = self.cursor;
         for parsed in self.input {
             match parsed {
                 Parsed::Stop => {
@@ -92,32 +92,32 @@ impl Checker {
                     break;
                 }
                 Parsed::Backspace => {
-                    match source_cursor.prev() {
-                        (Some(source_symbol), Some(cursor)) => self
+                    match cursor.prev() {
+                        (Some(source_symbol), Some((row, column))) => self
                             .output
-                            .send(Control::Previous(Some(source_symbol), cursor))?,
-                        (None, Some(cursor)) => {
-                            self.output.send(Control::Previous(None, cursor))?
-                        }
+                            .send(Control::Previous(Some(source_symbol), (row, column)))?,
+                        (None, Some((row, column))) => self
+                            .output
+                            .send(Control::Previous(None, (row, column)))?,
                         // Beginning of the string, backspacing does nothing
                         _ => {}
                     }
                 }
-                Parsed::Symbol(symbol) => match source_cursor.next() {
-                    (Some(source_symbol), Some(cursor)) => {
+                Parsed::Symbol(symbol) => match cursor.next() {
+                    (Some(source_symbol), Some((row, column))) => {
                         if source_symbol == symbol {
                             self.output
-                                .send(Control::Next(Some(Ok(source_symbol)), cursor))?
+                                .send(Control::Next(Some(Ok(source_symbol)), (row, column)))?
                         } else {
                             self.output
-                                .send(Control::Next(Some(Err(source_symbol)), cursor))?
+                                .send(Control::Next(Some(Err(source_symbol)), (row, column)))?
                         }
                     }
-                    (None, Some(cursor)) => {
+                    (None, Some((row, column))) => {
                         if symbol == '\n' {
-                            self.output.send(Control::Next(None, cursor))?
+                            self.output.send(Control::Next(None, (row, column)))?
                         } else {
-                            source_cursor.prev();
+                            cursor.prev();
                         }
                     }
                     (None, None) => {

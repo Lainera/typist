@@ -8,7 +8,7 @@ mod parser;
 mod renderer;
 mod source;
 
-use source::Source;
+use source::SimpleSource;
 use checker::{Checker, Control};
 use parser::{Parsed, Parser};
 use renderer::Renderer;
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         String::from("Hey dawg, this\nis a test string\nfor you to practice!")
     };
     // Create shareable immutable copy of source text;
-    let source = Arc::new(Source::new(source_text));
+    let source = Arc::new(SimpleSource::new(source_text));
     
     // Init communication channels
     // Done channel for remote parser shutdown.

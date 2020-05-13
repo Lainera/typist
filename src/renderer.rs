@@ -7,7 +7,10 @@ use std::{
 };
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use crate::{Control, Source};
+use crate::{
+    Control, 
+    source::Source,
+};
 
 pub(crate) struct Renderer {
     stdout: RawTerminal<Stdout>,
@@ -19,11 +22,11 @@ struct Cursor {
     head: usize,
     tail: usize,
     window_size: u16,
-    source: Arc<Source>,
+    source: Arc<dyn Source>, 
 }
 
 impl Cursor {
-    fn new(source: Arc<Source>) -> Result<Self, io::Error> {
+    fn new(source: Arc<dyn Source>) -> Result<Self, io::Error> {
         let (_, window_size) = termion::terminal_size()?;
         Ok(Self {
             head: 0,
@@ -113,7 +116,7 @@ fn ansi_goto(row: usize, column: usize) -> termion::cursor::Goto {
 }
 
 impl Renderer {
-    pub(crate) fn new(stdout: Stdout, input: Receiver<Control>, source: Arc<Source>) -> Result<Self, io::Error> {
+    pub(crate) fn new(stdout: Stdout, input: Receiver<Control>, source: Arc<dyn Source>) -> Result<Self, io::Error> {
         let stdout = stdout.into_raw_mode()?;
         let cursor = Cursor::new(source)?;
         Ok(Self {
@@ -132,8 +135,9 @@ impl Renderer {
                     // Restore everything back to normal on Stop command;
                     write!(
                         self.stdout, 
-                        "{}{}",
+                        "{}{}{}",
                         termion::clear::All,
+                        ansi_goto(0, 0),
                         termion::cursor::Restore,
                     )?;
                     self.stdout.flush()?;
