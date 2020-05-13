@@ -45,12 +45,12 @@ impl Cursor {
         };
     }
 
-    // As well as be able to move window itself.
+    // As well as move window itself.
     fn scroll_back(&mut self) {
         match (self.head.checked_sub(1), self.tail.checked_sub(1)) {
-            (Some(adjusted_head), Some(adjusted_tail)) => {
-                self.head = adjusted_head;
-                self.tail = adjusted_tail;
+            (Some(head), Some(tail)) => {
+                self.head = head;
+                self.tail = tail;
             }
             _ => (),
         }
