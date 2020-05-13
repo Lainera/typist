@@ -33,7 +33,7 @@ impl Cursor {
         })
     }
     
-    fn can_scroll_up(&self) -> bool {
+    fn can_scroll_back(&self) -> bool {
         self.head > 0 && 
         self.tail > 0 && 
         absolute_difference(self.head, self.tail) == 0
@@ -44,14 +44,14 @@ impl Cursor {
     }
     
     // Need to be able to move head within terminal window 
-    fn move_head_up(&mut self) {
+    fn move_head_back(&mut self) {
         if self.head.checked_sub(1).is_some() {
             self.head -= 1;
         };
     }
 
     // As well as be able to move window itself.
-    fn scroll_up(&mut self) {
+    fn scroll_back(&mut self) {
         match (self.head.checked_sub(1), self.tail.checked_sub(1)) {
             (Some(adjusted_head), Some(adjusted_tail)) => {
                 self.head = adjusted_head;
@@ -61,11 +61,11 @@ impl Cursor {
         }
     }
     
-    fn move_head_down(&mut self) {
+    fn move_head_forward(&mut self) {
         self.head += 1;
     }
     
-    fn scroll_down(&mut self) {
+    fn scroll_forward(&mut self) {
         self.head += 1;
         self.tail += 1;
     }
@@ -130,7 +130,12 @@ impl Renderer {
             match c {
                 Control::Stop => {
                     // Restore everything back to normal on Stop command;
-                    write!(self.stdout, "{}", termion::cursor::Restore)?;
+                    write!(
+                        self.stdout, 
+                        "{}{}",
+                        termion::clear::All,
+                        termion::cursor::Restore,
+                    )?;
                     self.stdout.flush()?;
                     break;
                 }
@@ -143,8 +148,8 @@ impl Renderer {
                     termion::cursor::Left(1)
                 )?,
                 // At the beginning of the line and need to move cursor up
-                Control::Previous(None, (row, column)) => if cursor.can_scroll_up() {
-                    cursor.scroll_up();
+                Control::Previous(None, (row, column)) => if cursor.can_scroll_back() {
+                    cursor.scroll_back();
                     let line = cursor.get_top_line().expect("Render cursor is not aligned");
                     write!(
                         self.stdout,
@@ -157,7 +162,7 @@ impl Renderer {
                         ansi_goto(0, column),
                     )?
                 } else {
-                    cursor.move_head_up(); 
+                    cursor.move_head_back(); 
                     write!(
                         self.stdout,
                         "{}",
@@ -166,7 +171,7 @@ impl Renderer {
                 },
                 // At the end of the line
                 Control::Next(None, (row, column)) => if cursor.is_at_the_bottom_of_the_screen() {
-                    cursor.scroll_down();
+                    cursor.scroll_forward();
                     if let Some(line) = cursor.get_bottom_line() {
                         write!(
                             self.stdout,
@@ -177,7 +182,7 @@ impl Renderer {
                         )?
                     } 
                 } else {
-                    cursor.move_head_down();
+                    cursor.move_head_forward();
                     write!(
                         self.stdout,
                         "{}",
