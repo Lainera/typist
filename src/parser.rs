@@ -1,4 +1,3 @@
-use crate::Control;
 use std::{
     io,
     sync::mpsc::{Receiver, Sender},
@@ -17,37 +16,40 @@ where
 {
     source: I,
     output: Sender<Parsed>,
-    done: Receiver<Control>,
+    done: Receiver<()>,
 }
 
 impl<I> Parser<I>
 where
     I: Iterator<Item = Result<Key, io::Error>>,
 {
-    pub(crate) fn new(source: I, done: Receiver<Control>, output: Sender<Parsed>) -> Self {
+    pub(crate) fn new(source: I, done: Receiver<()>, output: Sender<Parsed>) -> Self {
         Parser {
             source,
             output,
             done,
         }
     }
-
-    pub(crate) fn run(self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
-        for symbol in self.source {
-            match self.done.try_recv() {
-                Ok(Control::Stop) => break,
-                _ => (),
+    pub(crate) fn run(mut self) -> Result<(), std::sync::mpsc::SendError<Parsed>> {
+        loop {
+            if let Ok(_) = self.done.try_recv() {
+                break;
             }
-
-            match symbol.expect("Failed to parse symbol") {
-                Key::Ctrl(c) if c == 'c' => {
-                    self.output.send(Parsed::Stop)?;
-                    break;
+            if let Some(symbol) = self.source.next() {
+                match symbol.expect("Failed to parse symbol") {
+                    Key::Ctrl(c) if c == 'c' => {
+                        self.output.send(Parsed::Stop)?;
+                        break;
+                    }
+                    Key::Char(c) if c == '\t' => {
+                        for _ in 0..4 {
+                            self.output.send(Parsed::Symbol(' '))?
+                        }
+                    }
+                    Key::Backspace => self.output.send(Parsed::Backspace)?,
+                    Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
+                    _ => {}
                 }
-                Key::Backspace => self.output.send(Parsed::Backspace)?,
-                //            Key::Char('\n') => self.output.send(Parsed::Enter)?,
-                Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
-                _ => {}
             }
         }
         Ok(())
