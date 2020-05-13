@@ -34,4 +34,3 @@ impl Source for SimpleSource {
         self.source.get(row)
     }
 }
-

@@ -1,6 +1,6 @@
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
-use std::{io, thread};
 use std::sync::Arc;
+use std::{io, thread};
 use termion::input::TermRead;
 // local
 mod checker;
@@ -8,10 +8,10 @@ mod parser;
 mod renderer;
 mod source;
 
-use source::SimpleSource;
 use checker::{Checker, Control};
 use parser::{Parsed, Parser};
 use renderer::Renderer;
+use source::SimpleSource;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_text = if let Some(path) = std::env::args().nth(1) {
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // Create shareable immutable copy of source text;
     let source = Arc::new(SimpleSource::new(source_text));
-    
+
     // Init communication channels
     // Done channel for remote parser shutdown.
     let (tx_done, rx_done): (SyncSender<()>, Receiver<()>) = sync_channel(0);

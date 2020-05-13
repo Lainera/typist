@@ -1,4 +1,4 @@
-use crate::{Parsed, source::Source};
+use crate::{source::Source, Parsed};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ impl Cursor {
 
     fn next(&mut self) -> (Option<char>, Option<(usize, usize)>) {
         let (row, column) = self.cursor;
-        let symbol = self.source.get_char(row, column); 
+        let symbol = self.source.get_char(row, column);
         if let Some(&symbol) = symbol {
             self.cursor = (row, column + 1);
             return (Some(symbol), Some(self.cursor));
@@ -41,13 +41,17 @@ impl Cursor {
         let (row, column) = self.cursor;
         // There are still preceding characters
         if column > 0 {
-            let &symbol = self.source.get_char(row, column - 1).expect("Checker cursor desync");
+            let &symbol = self
+                .source
+                .get_char(row, column - 1)
+                .expect("Checker cursor desync");
             self.cursor = (row, column - 1);
             return (Some(symbol), Some(self.cursor));
         }
         // There are still preceding lines
         if row > 0 {
-            let line = self.source
+            let line = self
+                .source
                 .get_line(row - 1)
                 .expect("Overflow on the lines previous");
             self.cursor = (row - 1, line.len());
@@ -61,7 +65,7 @@ impl Cursor {
 }
 
 pub(crate) struct Checker {
-    cursor: Cursor, 
+    cursor: Cursor,
     input: Receiver<Parsed>,
     output: Sender<Control>,
     done: SyncSender<()>,
@@ -82,7 +86,7 @@ impl Checker {
             cursor,
         }
     }
-    
+
     pub(crate) fn run(self) -> Result<(), errors::CheckerError> {
         let mut cursor = self.cursor;
         for parsed in self.input {
@@ -96,9 +100,9 @@ impl Checker {
                         (Some(source_symbol), Some((row, column))) => self
                             .output
                             .send(Control::Previous(Some(source_symbol), (row, column)))?,
-                        (None, Some((row, column))) => self
-                            .output
-                            .send(Control::Previous(None, (row, column)))?,
+                        (None, Some((row, column))) => {
+                            self.output.send(Control::Previous(None, (row, column)))?
+                        }
                         // Beginning of the string, backspacing does nothing
                         _ => {}
                     }

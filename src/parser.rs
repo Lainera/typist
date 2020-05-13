@@ -41,8 +41,10 @@ where
                         self.output.send(Parsed::Stop)?;
                         break;
                     }
-                    Key::Char(c) if c == '\t' => for _ in 0..4 {
-                        self.output.send(Parsed::Symbol(' '))?
+                    Key::Char(c) if c == '\t' => {
+                        for _ in 0..4 {
+                            self.output.send(Parsed::Symbol(' '))?
+                        }
                     }
                     Key::Backspace => self.output.send(Parsed::Backspace)?,
                     Key::Char(c) => self.output.send(Parsed::Symbol(c))?,
