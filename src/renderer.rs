@@ -6,21 +6,23 @@ use termion::raw::{IntoRawMode, RawTerminal};
 
 use crate::{source::Source, Control};
 
-pub(crate) struct Renderer {
+pub(crate) struct Renderer<S: Source> {
     stdout: RawTerminal<Stdout>,
     input: Receiver<Control>,
-    cursor: Cursor,
+    cursor: Cursor<S>,
 }
 
-struct Cursor {
+struct Cursor<S: Source>{
     head: usize,
     tail: usize,
     window_size: u16,
-    source: Arc<dyn Source>,
+    source: Arc<S>,
 }
 
-impl Cursor {
-    fn new(source: Arc<dyn Source>) -> Result<Self, io::Error> {
+impl <S>Cursor<S>
+    where S: Source 
+{
+    fn new(source: Arc<S>) -> Result<Self, io::Error> {
         let (_, window_size) = termion::terminal_size()?;
         Ok(Self {
             head: 0,
@@ -106,19 +108,21 @@ fn ansi_goto(row: usize, column: usize) -> termion::cursor::Goto {
     termion::cursor::Goto((column + 1) as u16, (row + 1) as u16)
 }
 
-impl Renderer {
-    pub(crate) fn new(
-        stdout: Stdout,
-        input: Receiver<Control>,
-        source: Arc<dyn Source>,
-    ) -> Result<Self, io::Error> {
-        let stdout = stdout.into_raw_mode()?;
-        let cursor = Cursor::new(source)?;
-        Ok(Self {
-            stdout,
-            input,
-            cursor,
-        })
+impl <S>Renderer<S> 
+    where S: Source 
+    {
+        pub(crate) fn new(
+            stdout: Stdout,
+            input: Receiver<Control>,
+            source: Arc<S>,
+        ) -> Result<Self, io::Error> {
+            let stdout = stdout.into_raw_mode()?;
+            let cursor = Cursor::new(source)?;
+            Ok(Self {
+                stdout,
+                input,
+                cursor,
+            })
     }
 
     pub(crate) fn run(mut self) -> Result<(), io::Error> {
