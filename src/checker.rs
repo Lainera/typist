@@ -8,13 +8,13 @@ pub(crate) enum Control {
     Stop,
 }
 
-struct Cursor {
-    source: Arc<dyn Source>,
+struct Cursor<S: Source> {
+    source: Arc<S>,
     cursor: (usize, usize),
 }
 
-impl Cursor {
-    fn new(source: Arc<dyn Source>) -> Self {
+impl <S:Source>Cursor<S> {
+    fn new(source: Arc<S>) -> Self {
         Cursor {
             cursor: (0, 0),
             source,
@@ -64,19 +64,19 @@ impl Cursor {
     }
 }
 
-pub(crate) struct Checker {
-    cursor: Cursor,
+pub(crate) struct Checker<S: Source> {
+    cursor: Cursor<S>,
     input: Receiver<Parsed>,
     output: Sender<Control>,
     done: SyncSender<()>,
 }
 
-impl Checker {
+impl <S: Source>Checker<S> {
     pub(crate) fn new(
         input: Receiver<Parsed>,
         output: Sender<Control>,
         done: SyncSender<()>,
-        source: Arc<dyn Source>,
+        source: Arc<S>,
     ) -> Self {
         let cursor = Cursor::new(source);
         Self {
