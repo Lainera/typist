@@ -5,10 +5,10 @@
 
 - [install cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
 - `git clone`
-- `cargo build --release`
+- `cargo install --path .`
 
 ## Practice
-- `./typist %SOURCE_FILE`
+- `typist %SOURCE_FILE`
 
 ## Project Structure 
 
